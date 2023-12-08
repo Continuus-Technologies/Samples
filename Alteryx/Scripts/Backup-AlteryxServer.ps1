@@ -28,10 +28,16 @@
     Defaults to [C:\Program Files\Alteryx\bin]
 .PARAMETER fileList
     This array contains additional files to include in the backup.
-    By default, this will contain the path to Alteryx's RuntimeSettings.xml
+    By default, this will contain the path to Alteryx's RuntimeSettings.xml, SystemAlias.xml, and SystemConnections.xml.
+.PARAMETER backupSecrets
+    This switch parameter allows the backup of the controller token and MongoDB passwords.
+    By default, this is absent.
 .EXAMPLE
     Backup-AlteryxServer [[-dest] E:\Temp\MongoDB_Backup] [[-archive] \\FILER.DOMAIN.COM\Share\Alteryx\MongoDB-Backups]
     This example uses a non-default destination
+.EXAMPLE
+    Backup-AlteryxServer -backupSecrets
+    This example will backup the Alteryx server's secrets in addition to the database.
 .NOTES
     Author: Comrad Kite
             Continuus Technologies
@@ -57,6 +63,11 @@
         The backup is then copied to a compressed file on a remote SMB file share. On
         average the overall process should take about 30 minutes but its all down to
         the content of the DB and the speed of the network.
+
+    backupSecrets Considerations:
+        This script provides the ability to backup the Alteryx server's controller token
+        and MongoDB user and admin passwords. This isn't intended for a scheduled backup,
+        but rather to ensure that everything is captured for a server migration.
         
     Multi-Node Deployment Considerations: 
         In a multi-node environment, where the role of an Alteryx server are on different hosts,
