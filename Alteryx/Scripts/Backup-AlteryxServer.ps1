@@ -89,7 +89,7 @@ param (
     [string]$destRetention = '1',
     [Parameter(Mandatory = $false,
         HelpMessage = "The path that the remote, compressed, backup will be stored.")]
-    [string]$archive = "\\NAS.DOMAIN.COM\Backups\Alteryx-Node1\MongoDB-Backups",
+    [string]$archive = "\\USCE-DC-P01.ad.continuus-technologies.com\Data\Alteryx\MongoDB-Backups",
     [Parameter(Mandatory = $false,
         HelpMessage = "The number of days to retain a backup.")]
     [string]$archiveRetention = '4',
@@ -105,8 +105,12 @@ param (
     [Parameter(Mandatory = $false,
         HelpMessage = "Additional files to include in the backup.")]
     [System.Collections.ArrayList]$fileList = @(
-        "C:\ProgramData\Alteryx\RuntimeSettings.xml"
-    )
+        "C:\ProgramData\Alteryx\RuntimeSettings.xml",
+        "C:\ProgramData\Alteryx\Engine\SystemAlias.xml",
+        "C:\ProgramData\Alteryx\Engine\SystemConnections.xml"
+    ),
+    [Parameter(HelpMessage = "Backup controller token and mongo passwords")]
+    [switch]$backupSecrets
 )
 
 if (!(Test-Path $dest)) {
@@ -234,20 +238,41 @@ $totalScriptTime = Measure-Command {
     $output = "Starting Alteryx Service exit code: $lastexitcode"
     SendOutput -Output $Output
 
+    if ($backupSecrets){
+        Write-Warning "The backupSecrets switch was set, this backup will contain secrets."
+        # Backup controller token
+        & "$binPath\AlteryxService.exe" getserversecret -Wait | Out-File $dest\$dumpname\serversecret.txt
+
+        # Backup database passwords
+        & "$binPath\AlteryxService.exe" getemongopassword -Wait | Out-File $dest\$dumpname\emongopassword.txt
+
+        $output = "Exported controller token and MongoDB secrets"
+        SendOutput -Output $Output
+    }else{
+        $output = "Exported controller token and MongoDB secrets"
+        SendOutput -Output $Output
+    }
+
     # Add additional files to $dest
     foreach ($file in $filelist) {
         $sourceFile = $file
-        Get-ChildItem $sourceFile | Copy-Item -Recurse -Destination $dest\$dumpname
-        $destFile = $sourceFile.Split('\') | Select-Object -Last 1
-        # Make sure the copy matches the source
-        if ((Get-FileHash $sourceFile).Hash -ne (Get-FileHash $dest\$dumpname\$destFile).Hash) {
-            $Output = "Copy to remote archive failed. $dest\$destFile - $file hashes don't match"
+        if (Test-Path $sourceFile){
+            Get-ChildItem $sourceFile | Copy-Item -Recurse -Destination $dest\$dumpname
+            $destFile = $sourceFile.Split('\') | Select-Object -Last 1
+            # Make sure the copy matches the source
+            if ((Get-FileHash $sourceFile).Hash -ne (Get-FileHash $dest\$dumpname\$destFile).Hash) {
+                $Output = "Copy to remote archive failed. $dest\$destFile - $file hashes don't match"
+                SendOutput -Output $Output
+            }
+            else {
+                $Output = "Copy to remote archive successful. $dest\$destFile - $file hashes match"
+                SendOutput -Output $Output
+            }
+        }else{
+            $Output = "$sourcefile does not exist, skipping."
             SendOutput -Output $Output
         }
-        else {
-            $Output = "Copy to remote archive successful. $dest\$destFile - $file hashes match"
-            SendOutput -Output $Output
-        }
+
     }
 
     # Create a compressed file on the $archive and copy the backup from $dest for long term storage
@@ -319,7 +344,7 @@ $totalScriptTime = Measure-Command {
     $lastWrite = (Get-Date).AddDays(-$archiveRetention)
 
     # Clean up the archived remote backups based on lastwrite filter and file name
-    $archiveFiles = Get-Childitem "$archive\Backup*.zip" -Recurse | Where-Object { $_.LastWriteTime -lt "$lastWrite" }
+    $archiveFiles = Get-Childitem "$archive\AlteryxBackup*.zip" -Recurse | Where-Object { $_.LastWriteTime -lt "$lastWrite" }
     if ($archiveFiles -ne $null) {
         foreach ($zipArchive in $archiveFiles) {
             $Output = "Removing archive $zipArchive"; SendOutput -Output $Output
